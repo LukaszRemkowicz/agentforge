@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentforge"
+version = "0.1.0"
+description = "A local knowledge foundation for coding agents."
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+agentctl = "agentforge.cli:main"
+
+[dependency-groups]
+dev = ["pyright>=1.1.407", "pytest>=8.3", "ruff>=0.14.4"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentforge"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: requires Docker and local services"]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.12"
+typeCheckingMode = "basic"
+
+[tool.ruff]
+extend-exclude = ["AGENTFORGE_RAG_IMPLEMENTATION_PLAN.md", "docs"]
+line-length = 88
+target-version = "py312"
