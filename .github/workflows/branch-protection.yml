@@ -1,0 +1,12 @@
+name: Branch Protection Check
+
+on:
+  pull_request:
+
+jobs:
+  branch-protection:
+    uses: LukaszRemkowicz/ci-cd/.github/workflows/branch-protection.yml@main
+    with:
+      target_branch: main
+      allowed_exact_branches: dev
+      allowed_pattern_branches: ^hotfix/.*,^release/.*

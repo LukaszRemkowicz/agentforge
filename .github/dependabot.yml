@@ -1,0 +1,39 @@
+version: 2
+multi-ecosystem-groups:
+  all-dependencies:
+    open-pull-requests-limit: 1
+    schedule:
+      interval: monthly
+      day: monday
+      time: "09:00"
+    target-branch: dev
+    commit-message:
+      prefix: chore
+      include: scope
+updates:
+  - package-ecosystem: uv
+    directory: "/"
+    patterns:
+      - "*"
+    multi-ecosystem-group: all-dependencies
+    assignees:
+      - LukaszRemkowicz
+    labels:
+      - dependencies
+      - python
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    patterns:
+      - "*"
+    multi-ecosystem-group: all-dependencies
+    assignees:
+      - LukaszRemkowicz
+    labels:
+      - dependencies
+      - github-actions
+      - ci-cd
