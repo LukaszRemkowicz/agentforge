@@ -1,0 +1,179 @@
+name: AgentForge CI/CD
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Check lockfile
+        run: uv lock --check
+
+      - name: Run Ruff lint
+        run: uv run ruff check .
+
+      - name: Check Ruff formatting
+        run: uv run ruff format --check .
+
+      - name: Run Pyright
+        run: uv run pyright
+
+  unit-tests:
+    name: Unit Tests
+    uses: LukaszRemkowicz/ci-cd/.github/workflows/python-tests-uv.yml@main
+    with:
+      python_version: "3.12"
+      test_command: uv run pytest -m "not integration"
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+
+      - name: Run pgvector integration tests
+        run: uv run pytest -m integration
+
+      - name: Remove ephemeral Compose resources
+        if: always()
+        run: docker compose --project-name agentforge down --volumes --remove-orphans
+
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked --all-groups
+
+      - name: Build wheel and source distribution
+        run: uv build
+
+  dependency-security:
+    name: Dependency Security Checks
+    runs-on: ubuntu-latest
+    needs:
+      - quality
+      - unit-tests
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Export locked requirements
+        run: uv export --locked --all-groups --format requirements-txt --no-emit-project --output-file requirements-audit.txt
+
+      - name: Run pip-audit
+        run: uvx pip-audit --require-hashes --disable-pip -r requirements-audit.txt
+
+  trivy-scan:
+    name: Trivy Security Analysis
+    needs:
+      - quality
+      - unit-tests
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    uses: LukaszRemkowicz/ci-cd/.github/workflows/trivy-scan.yml@main
+    with:
+      upload_sarif: false
+
+  version-check:
+    name: Version Check
+    if: github.event_name == 'pull_request'
+    uses: LukaszRemkowicz/ci-cd/.github/workflows/pyproject-version-check.yml@main
+    with:
+      base_branch: main
+      head_branch: dev
+
+  pr-status:
+    name: PR Status
+    needs:
+      - quality
+      - unit-tests
+      - integration-tests
+      - build
+      - dependency-security
+      - trivy-scan
+      - version-check
+    if: always() && github.event_name == 'pull_request'
+    permissions:
+      issues: write
+      pull-requests: write
+    uses: LukaszRemkowicz/ci-cd/.github/workflows/pr-status.yml@main
+    with:
+      status_items_json: >-
+        {"Quality":"${{ needs.quality.result }}","Unit Tests":"${{ needs.unit-tests.result }}","Integration Tests":"${{ needs.integration-tests.result }}","Build":"${{ needs.build.result }}","Dependency Security Checks":"${{ needs.dependency-security.result }}","Trivy Security Analysis":"${{ needs.trivy-scan.result }}","Version Check":"${{ needs.version-check.result }}"}
+      success_message: 🎉 **All checks passed!**
+      failure_message: ⚠️ **Some checks failed. Please review the logs.**
